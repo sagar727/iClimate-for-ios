@@ -66,16 +66,17 @@ struct ClimateView: View {
                                 VStack{
                                     Text(String(format: "%.1f \(tempToggle ? "°F" : "°C")", vm.current))
                                         .font(.system(size: 24))
-                                        .padding(.top)
-                                    Image(systemName: vm.currConditionIcon)
+                                        .padding(EdgeInsets(top: 7, leading: 0, bottom: 0, trailing: 0))
+                                    Image(systemName: vm.climateIcon)
+                                        .foregroundStyle(vm.primaryColor,vm.secondaryColor,vm.tertiaryColor)
                                         .font(.system(size: 40))
                                         .foregroundStyle(Color.white)
                                         .padding(EdgeInsets(top: 5, leading: 0, bottom: 0, trailing: 0))
-                                    Text(vm.currCondition)
+                                    Text(vm.climateCondition)
                                         .font(.system(size: 18))
-                                        .padding(EdgeInsets(top: 0, leading: 0, bottom: 10, trailing: 0))
+                                        .padding(EdgeInsets(top: 5, leading: 0, bottom: 10, trailing: 0))
                                     HStack{
-                                        VStack(alignment:.leading){
+                                        VStack(alignment:.center){
                                             Text("Min")
                                                 .font(.system(size: 16))
                                             Text(String(format: "%.1f \(tempToggle ? "°F" : "°C")", vm.min))
@@ -95,8 +96,7 @@ struct ClimateView: View {
                                         }
                                     }
                                 }
-                                
-                            }.padding(EdgeInsets(top: 60, leading: 20, bottom: 30, trailing: 20))
+                            }.padding(EdgeInsets(top: 60, leading: 20, bottom: 20, trailing: 20))
                                 .frame(height: 150)
                                
                             ScrollView(.vertical, showsIndicators: false){
@@ -195,6 +195,7 @@ struct ClimateView: View {
                     .onAppear(){
                         locationService.requestPermission()
                         vm.getDefaultCity()
+                        vm.scheduleForecastNotification()
                         Task{
                             vm.isLoading = true
                             if(vm.defaultLat != 0.0 && vm.defaultLng != 0.0){
@@ -270,6 +271,7 @@ struct CityListView: View {
     @State var searchActive: Bool = false
     @State var selectedCity: PlaceResult?
     @State var searchResult: [PlaceResult] = []
+    @State var isAlert: Bool = false
     @AppStorage("latitude") var lat: Double = 0.0
     @AppStorage("longitude") var lng: Double = 0.0
     var body: some View {
@@ -325,23 +327,36 @@ struct CityListView: View {
                     }
                     
                     HStack{
-                        Image(systemName: "mappin.and.ellipse")
-                            .foregroundStyle(Color.red)
-                            .font(.system(size: 24))
-                        Text(selectedCity?.city ?? "")
-                            .font(.system(size: 26))
-                        Spacer()
+                        if(!((selectedCity?.city.isEmpty) == nil)){
+                            Image(systemName: "mappin.and.ellipse")
+                                .foregroundStyle(Color.red)
+                                .font(.system(size: 24))
+                            Text(selectedCity?.city ?? "")
+                                .font(.system(size: 26))
+                            Spacer()
+                        }
                     }
                     .padding()
                     
-                    Button("Add City") {
-                        vm.addCity(name: selectedCity?.city ?? "", lat: selectedCity?.lat ?? 0.0, lng: selectedCity?.long ?? 0.0)
+                    if(!((selectedCity?.city.isEmpty) == nil)) {
+                        Button("Add City") {
+                            if(!vm.cities.contains(where: {$0.name == selectedCity?.city ?? ""})){
+                                vm.addCity(name: selectedCity?.city ?? "", lat: selectedCity?.lat ?? 0.0, lng: selectedCity?.long ?? 0.0)
+                                selectedCity = nil
+                            }else{
+                                isAlert.toggle()
+                            }
+                        }.alert("City already added in Favorite.", isPresented: $isAlert, actions: {
+                            Button("Ok", role: .cancel) {
+                                selectedCity = nil
+                            }
+                        })
+                        .buttonStyle(BorderedButtonStyle())
+                        .background(Color("ListBackgroundColor"))
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                        .padding(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 10))
                     }
-                    .buttonStyle(BorderedButtonStyle())
-                    .background(Color("ListBackgroundColor"))
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                    .padding(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 10))
-                   
+                    
                     HStack(alignment:.center){
                         Spacer()
                         Text("Your Favorite Cities")
