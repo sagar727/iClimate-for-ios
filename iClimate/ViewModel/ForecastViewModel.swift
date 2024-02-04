@@ -36,8 +36,11 @@ final class ForecastViewModel {
     var gust: Double = 0.0
     var wind: Double = 0.0
     var locationName: String = ""
-    var currCondition: String = ""
-    var currConditionIcon: String = "sun.max.fill"
+    var climateCondition: String = ""
+    var climateIcon: String = "sun.max.fill"
+    var primaryColor = Color.white
+    var secondaryColor = Color.white
+    var tertiaryColor = Color.white
     var isDay: Bool = true
     var code: Int = 0
     var defaultLat: Double = 0.0
@@ -67,7 +70,8 @@ final class ForecastViewModel {
                 print("error")
                 return
             }
-            let currentHour = Calendar.current.dateComponents([.hour], from: Date()).hour
+            let currTime = data.current.time
+            let currentHour = Int(currTime.split(separator: "T")[1].split(separator: ":")[0])
             var j = 0
             hData.removeAll()
             data.hourly.time.indices.forEach { index in
@@ -152,15 +156,13 @@ final class ForecastViewModel {
             snow = climateData?.current.snowfall ?? 0.0
             gust = climateData?.current.windGusts10M ?? 0.0
             wind = climateData?.current.windSpeed10M ?? 0.0
-            reverseGeocoding(latitude: lat, longitude: lng)
             let dayCode = climateData?.current.isDay
             if(dayCode == 0){
                 isDay = false
             }else{
                 isDay = true
             }
-            currCondition = getWeatherCondition(code: code, isDay: isDay)[0]
-            currConditionIcon = getWeatherCondition(code: code, isDay: isDay)[1]
+            getWeatherCondition(code: code, isDay: isDay)
             isLoading = false
         }catch{
             print(error)
@@ -170,25 +172,30 @@ final class ForecastViewModel {
     
     func scheduleForecastNotification() {
         if(notification){
-            var tsk: [BGTaskRequest] = []
-            let timezone = TimeZone.current
-            var cal = Calendar.current
-            cal.timeZone = timezone
-            let interval = cal.date(byAdding: .hour, value: 6, to: .now)!
-            let request = BGAppRefreshTaskRequest(identifier: "forecastNotification")
-            request.earliestBeginDate = interval
-            do{
-                BGTaskScheduler.shared.getPendingTaskRequests { task in
-                    tsk.append(contentsOf: task)
-                    print(task)
+            isTaskAlreadyScheduled(){ isScheduled in
+                if(!isScheduled){
+                    let timezone = TimeZone.current
+                    var cal = Calendar.current
+                    cal.timeZone = timezone
+                    let interval = cal.date(byAdding: .hour, value: 6, to: .now)!
+                    let request = BGAppRefreshTaskRequest(identifier: "forecastNotification")
+                    request.earliestBeginDate = interval
+                    do{
+                        try BGTaskScheduler.shared.submit(request)
+                        print("task scheduled")
+                    }catch(let error){
+                        print(error.localizedDescription)
+                    }
                 }
-                if(tsk.isEmpty){
-                    try BGTaskScheduler.shared.submit(request)
-                    print("task scheduled")
-                }
-            }catch(let error){
-                print(error.localizedDescription)
             }
+        }
+    }
+    
+    func isTaskAlreadyScheduled(completion: @escaping (Bool) -> Void) {
+        
+        BGTaskScheduler.shared.getPendingTaskRequests { taskRequests in
+            let isScheduled = taskRequests.contains {$0.identifier == "forecastNotification"}
+            completion(isScheduled)
         }
     }
     
@@ -201,11 +208,11 @@ final class ForecastViewModel {
                 let climateData = try await service.retrieve(lat: defaultLat, lng: defaultLng)
                 let current = climateData.current.temperature2M
                 let code = climateData.current.weatherCode
-                let currentCondition = getWeatherCondition(code: code, isDay: false)[0]
+                getWeatherCondition(code: code, isDay: false)
                 
                 let content = UNMutableNotificationContent()
                 content.title = "\(current) ° \(tempUnit ? "F" : "C")"
-                content.subtitle = currentCondition
+                content.subtitle = climateCondition
                 content.sound = .default
                 
                 let intervalTrigger = UNTimeIntervalNotificationTrigger(timeInterval: 10, repeats: false)
@@ -221,22 +228,24 @@ final class ForecastViewModel {
         }
     }
     
-    func getWeatherCondition(code: Int, isDay: Bool) -> [String]{
-        var climateCondition: String = ""
-        var climateIcon: String = ""
+    func getWeatherCondition(code: Int, isDay: Bool){
         switch code {
         case 0:
             climateCondition = "Clear Sky"
             climateIcon = (isDay) ? "sun.max.fill":"moon.fill"
+            primaryColor = (isDay) ? Color.yellow: Color.white
         case 1:
             climateCondition = "Mainly clear"
             climateIcon = (isDay) ? "sun.max.fill":"moon.fill"
+            primaryColor = (isDay) ? Color.yellow: Color.white
         case 2:
             climateCondition = "Partly cloudy"
             climateIcon = (isDay) ? "cloud.sun.fill":"cloud.moon.fill"
+            secondaryColor = (isDay) ? Color.yellow: Color.white
         case 3:
             climateCondition = "Overcast"
             climateIcon = (isDay) ? "sun.haze.fill":"moon.haze.fill"
+            secondaryColor = (isDay) ? Color.yellow: Color.white
         case 45:
             climateCondition = "Fog"
             climateIcon = "cloud.fog.fill"
@@ -246,38 +255,52 @@ final class ForecastViewModel {
         case 51:
             climateCondition = "Drizzle: Light intensity"
             climateIcon = "cloud.drizzle.fill"
+            secondaryColor = Color.blue
         case 53:
             climateCondition = "Drizzle: Moderate intensity"
             climateIcon = "cloud.drizzle.fill"
+            secondaryColor = Color.blue
         case 55:
             climateCondition = "Drizzle: Dense intensity"
             climateIcon = "cloud.drizzle.fill"
+            secondaryColor = Color.blue
         case 56:
             climateCondition = "Freezing Drizzle: Light intensity"
             climateIcon = "cloud.drizzle.fill"
+            secondaryColor = Color.blue
         case 57:
             climateCondition = "Freezing Drizzle: Dense intensity"
             climateIcon = "cloud.drizzle.fill"
+            secondaryColor = Color.blue
         case 61:
             climateCondition = "Rain: Slight intensity"
             climateIcon = (isDay) ? "cloud.sun.rain.fill":"cloud.moon.rain.fill"
+            secondaryColor = (isDay) ? Color.yellow: Color.white
+            tertiaryColor = Color.blue
         case 63:
             climateCondition = "Rain: Moderate intensity"
             climateIcon = "cloud.rain.fill"
+            secondaryColor = Color.blue
         case 65:
             climateCondition = "Rain: Heavy intensity"
             climateIcon = "cloud.heavyrain.fill"
+            secondaryColor = Color.blue
         case 66:
             climateCondition = "Freezing Rain: Light intensity"
+            climateIcon = "cloud.heavyrain.fill"
+            secondaryColor = Color.blue
         case 67:
             climateCondition = "Freezing Rain: Heavy intensity"
             climateIcon = "cloud.heavyrain.fill"
+            secondaryColor = Color.blue
         case 71:
             climateCondition = "Snow fall: Slight intensity"
             climateIcon = (isDay) ? "sun.snow.fill":"moon.snow.fill"
+            secondaryColor = (isDay) ? Color.yellow: Color.white
         case 73:
             climateCondition = "Snow fall: Moderate intensity"
             climateIcon = (isDay) ? "sun.snow.fill":"moon.snow.fill"
+            secondaryColor = (isDay) ? Color.yellow: Color.white
         case 75:
             climateCondition = "Snow fall: Heavy intensity"
             climateIcon = "cloud.snow.fill"
@@ -287,31 +310,39 @@ final class ForecastViewModel {
         case 80:
             climateCondition = "Rain showers: Slight intensity"
             climateIcon = (isDay) ? "cloud.sun.rain.fill":"cloud.moon.rain.fill"
+            secondaryColor = (isDay) ? Color.yellow: Color.white
+            tertiaryColor = Color.blue
         case 81:
             climateCondition = "Rain showers: Moderate intensity"
             climateIcon = (isDay) ? "cloud.sun.rain.fill":"cloud.moon.rain.fill"
+            secondaryColor = (isDay) ? Color.yellow: Color.white
+            tertiaryColor = Color.blue
         case 82:
             climateCondition = "Rain showers: Violent intensity"
             climateIcon = "cloud.heavyrain.fill"
+            secondaryColor = Color.blue
         case 85:
             climateCondition = "Snow showers: Slight intensity"
             climateIcon = (isDay) ? "sun.snow.fill":"moon.snow.fill"
+            secondaryColor = (isDay) ? Color.yellow: Color.white
         case 86:
             climateCondition = "Snow showers: Heavy intensity"
             climateIcon = "cloud.snow.fill"
         case 95:
             climateCondition = "Thunderstorm: Slight or moderate"
             climateIcon = "cloud.bolt.rain.fill"
+            secondaryColor = Color.blue
         case 96:
             climateCondition = "Thunderstorm with slight hail"
             climateIcon = "cloud.bolt.rain.fill"
+            secondaryColor = Color.blue
         case 99:
             climateCondition = "Thunderstorm with heavy hail"
             climateIcon = "cloud.bolt.rain.fill"
+            secondaryColor = Color.blue
         default:
             climateCondition = ""
         }
-        return [climateCondition,climateIcon]
     }
     
     func getDayName(dt: String) -> String {
@@ -422,6 +453,7 @@ final class ForecastViewModel {
             if let defaultCity = try container.viewContext.fetch(request).first {
                 defaultLat = defaultCity.lat
                 defaultLng = defaultCity.lng
+                locationName = defaultCity.name!
             }
         }catch let error {
             print(error.localizedDescription)

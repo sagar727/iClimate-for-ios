@@ -11,7 +11,7 @@ import CoreLocationUI
 struct ClimateView: View {
     
     private let vm = ForecastViewModel()
-    private let locationService = LocationService()
+    @State var locationService = LocationService()
     @State var progress: Double = 0.0
     @State private var networkMonitor = NetworkMonitor()
     @AppStorage("tempUnit") var tempToggle: Bool = false
@@ -32,10 +32,16 @@ struct ClimateView: View {
                         }else{
                             HStack(alignment:.top){
                                 Button(action: {
-                                    locationService.requestPermission()
                                     Task{
                                         vm.isLoading = true
-                                        await vm.getClimateData(lat: locationService.latitude, lng: locationService.longitude)
+                                        try? await Task.sleep(nanoseconds: 5_000_000_000)
+                                        if(locationService.location == nil){
+                                            vm.isLoading = false
+                                        }
+                                        guard let loc = locationService.location else {
+                                            return}
+                                        await vm.getClimateData(lat: loc.latitude, lng: loc.longitude)
+                                        vm.reverseGeocoding(latitude: loc.latitude, longitude: loc.longitude)
                                         progress = vm.getProgressPercentage(min: vm.min, max: vm.max, current: vm.current)
                                     }
                                     
@@ -66,16 +72,17 @@ struct ClimateView: View {
                                 VStack{
                                     Text(String(format: "%.1f \(tempToggle ? "°F" : "°C")", vm.current))
                                         .font(.system(size: 24))
-                                        .padding(.top)
-                                    Image(systemName: vm.currConditionIcon)
+                                        .padding(EdgeInsets(top: 7, leading: 0, bottom: 0, trailing: 0))
+                                    Image(systemName: vm.climateIcon)
+                                        .foregroundStyle(vm.primaryColor,vm.secondaryColor,vm.tertiaryColor)
                                         .font(.system(size: 40))
                                         .foregroundStyle(Color.white)
                                         .padding(EdgeInsets(top: 5, leading: 0, bottom: 0, trailing: 0))
-                                    Text(vm.currCondition)
+                                    Text(vm.climateCondition)
                                         .font(.system(size: 18))
-                                        .padding(EdgeInsets(top: 0, leading: 0, bottom: 10, trailing: 0))
+                                        .padding(EdgeInsets(top: 5, leading: 0, bottom: 10, trailing: 0))
                                     HStack{
-                                        VStack(alignment:.leading){
+                                        VStack(alignment:.center){
                                             Text("Min")
                                                 .font(.system(size: 16))
                                             Text(String(format: "%.1f \(tempToggle ? "°F" : "°C")", vm.min))
@@ -95,8 +102,7 @@ struct ClimateView: View {
                                         }
                                     }
                                 }
-                                
-                            }.padding(EdgeInsets(top: 60, leading: 20, bottom: 30, trailing: 20))
+                            }.padding(EdgeInsets(top: 60, leading: 20, bottom: 20, trailing: 20))
                                 .frame(height: 150)
                                
                             ScrollView(.vertical, showsIndicators: false){
@@ -159,24 +165,11 @@ struct ClimateView: View {
                         if(lat != 0.0 && lng != 0.0){
                             vm.isLoading = true
                             Task{
-                                vm.reverseGeocoding(latitude: lat, longitude: lng)
                                 await vm.getClimateData(lat: lat, lng: lng)
+                                vm.reverseGeocoding(latitude: lat, longitude: lng)
                                 progress = vm.getProgressPercentage(min: vm.min, max: vm.max, current: vm.current)
                                 lat = 0.0
                                 lng = 0.0
-                            }
-                        }else {
-                            vm.getDefaultCity()
-                            vm.isLoading = true
-                            Task{
-                                if(vm.defaultLat != 0.0 && vm.defaultLng != 0.0){
-                                    vm.reverseGeocoding(latitude: vm.defaultLat, longitude: vm.defaultLng)
-                                    await vm.getClimateData(lat: vm.defaultLat, lng: vm.defaultLng)
-                                }else{
-                                    vm.reverseGeocoding(latitude: locationService.latitude, longitude: locationService.longitude)
-                                    await vm.getClimateData(lat: locationService.latitude, lng: locationService.longitude)
-                                }
-                                progress = vm.getProgressPercentage(min: vm.min, max: vm.max, current: vm.current)
                             }
                         }
                     }){
@@ -193,17 +186,23 @@ struct ClimateView: View {
                     }
                     .foregroundStyle(Color("SemiWhite"))
                     .onAppear(){
-                        locationService.requestPermission()
-                        vm.getDefaultCity()
                         Task{
+                            vm.getDefaultCity()
+                            vm.scheduleForecastNotification()
                             vm.isLoading = true
                             if(vm.defaultLat != 0.0 && vm.defaultLng != 0.0){
-                                vm.reverseGeocoding(latitude: vm.defaultLat, longitude: vm.defaultLng)
                                 await vm.getClimateData(lat: vm.defaultLat, lng: vm.defaultLng)
                             }else{
-                                vm.reverseGeocoding(latitude: locationService.latitude, longitude: locationService.longitude)
-                                await vm.getClimateData(lat: locationService.latitude, lng: locationService.longitude)
-                                vm.addCity(name: vm.locationName, lat: locationService.latitude, lng: locationService.longitude)
+                                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                                if(locationService.location == nil){
+                                    vm.isLoading = false
+                                    
+                                }
+                                guard let loc = locationService.location else {
+                                    return}
+                                await vm.getClimateData(lat: loc.latitude, lng: loc.longitude)
+                                vm.reverseGeocoding(latitude: loc.latitude, longitude: loc.longitude)
+                                vm.addCity(name: vm.locationName, lat: loc.latitude, lng: loc.longitude)
                             }
                             progress = vm.getProgressPercentage(min: vm.min, max: vm.max, current: vm.current)
                         }
@@ -270,6 +269,7 @@ struct CityListView: View {
     @State var searchActive: Bool = false
     @State var selectedCity: PlaceResult?
     @State var searchResult: [PlaceResult] = []
+    @State var isAlert: Bool = false
     @AppStorage("latitude") var lat: Double = 0.0
     @AppStorage("longitude") var lng: Double = 0.0
     var body: some View {
@@ -325,23 +325,36 @@ struct CityListView: View {
                     }
                     
                     HStack{
-                        Image(systemName: "mappin.and.ellipse")
-                            .foregroundStyle(Color.red)
-                            .font(.system(size: 24))
-                        Text(selectedCity?.city ?? "")
-                            .font(.system(size: 26))
-                        Spacer()
+                        if(!((selectedCity?.city.isEmpty) == nil)){
+                            Image(systemName: "mappin.and.ellipse")
+                                .foregroundStyle(Color.red)
+                                .font(.system(size: 24))
+                            Text(selectedCity?.city ?? "")
+                                .font(.system(size: 26))
+                            Spacer()
+                        }
                     }
                     .padding()
                     
-                    Button("Add City") {
-                        vm.addCity(name: selectedCity?.city ?? "", lat: selectedCity?.lat ?? 0.0, lng: selectedCity?.long ?? 0.0)
+                    if(!((selectedCity?.city.isEmpty) == nil)) {
+                        Button("Add City") {
+                            if(!vm.cities.contains(where: {$0.name == selectedCity?.city ?? ""})){
+                                vm.addCity(name: selectedCity?.city ?? "", lat: selectedCity?.lat ?? 0.0, lng: selectedCity?.long ?? 0.0)
+                                selectedCity = nil
+                            }else{
+                                isAlert.toggle()
+                            }
+                        }.alert("City already added in Favorite.", isPresented: $isAlert, actions: {
+                            Button("Ok", role: .cancel) {
+                                selectedCity = nil
+                            }
+                        })
+                        .buttonStyle(BorderedButtonStyle())
+                        .background(Color("ListBackgroundColor"))
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                        .padding(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 10))
                     }
-                    .buttonStyle(BorderedButtonStyle())
-                    .background(Color("ListBackgroundColor"))
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                    .padding(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 10))
-                   
+                    
                     HStack(alignment:.center){
                         Spacer()
                         Text("Your Favorite Cities")
@@ -377,6 +390,8 @@ struct CityListView: View {
                                 .swipeActions(edge:.leading,allowsFullSwipe: true){
                                     Button(action: {
                                         vm.update(city: city)
+                                        lat = city.lat
+                                        lng = city.lng
                                     }, label: {
                                         Label(title: {
                                             Text("Set Default")
@@ -387,6 +402,8 @@ struct CityListView: View {
                                     .tint(Color.green)
                                     Button(action: {
                                         vm.update(city: city)
+                                        lat = city.lat
+                                        lng = city.lng
                                     }, label: {
                                         Text("Set Default")
                                     })

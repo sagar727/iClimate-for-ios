@@ -55,7 +55,6 @@ final class GooglePlacesManager {
 
                     let placeResult = PlaceResult(city: place.formattedAddress ?? "", lat: place.coordinate.latitude, long: place.coordinate.longitude)
                     places.append(placeResult)
-                    print(places)
                 }
             }
             
