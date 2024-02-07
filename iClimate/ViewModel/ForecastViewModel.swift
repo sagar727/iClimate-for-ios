@@ -471,6 +471,7 @@ final class ForecastViewModel {
             
             if let placemarks = placemarks, let placemark = placemarks.first {
                 self.locationName = "\(placemark.locality ?? ""), \(placemark.administrativeArea ?? ""), \(placemark.country ?? "")"
+                print(self.locationName)
             }else {
                 print("no address")
             }

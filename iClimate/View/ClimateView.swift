@@ -196,12 +196,11 @@ struct ClimateView: View {
                                 try? await Task.sleep(nanoseconds: 5_000_000_000)
                                 if(locationService.location == nil){
                                     vm.isLoading = false
-                                    
                                 }
                                 guard let loc = locationService.location else {
                                     return}
-                                await vm.getClimateData(lat: loc.latitude, lng: loc.longitude)
                                 vm.reverseGeocoding(latitude: loc.latitude, longitude: loc.longitude)
+                                await vm.getClimateData(lat: loc.latitude, lng: loc.longitude)
                                 vm.addCity(name: vm.locationName, lat: loc.latitude, lng: loc.longitude)
                             }
                             progress = vm.getProgressPercentage(min: vm.min, max: vm.max, current: vm.current)
